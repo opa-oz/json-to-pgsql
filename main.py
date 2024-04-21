@@ -36,14 +36,14 @@ def bulk_schema():
 
     output_dir.mkdir(exist_ok=True)
 
-    # with open(resources_dir / 'schema-sample.json', 'r') as f:
-    #     data = json.load(f)
-    #
-    # pgsql = generate(data, "poor_anime")
-    #
-    # for table in pgsql:
-    #     print(sql_table(table))
-    # print("======\n\n")
+    with open(resources_dir / 'schema-sample.json', 'r') as f:
+        data = json.load(f)
+
+    pgsql = generate(data, "poor_anime")
+
+    for table in pgsql:
+        print(sql_table(table))
+    print("======\n\n")
 
     with open(resources_dir / 'schema-sample2.json', 'r') as f:
         data = json.load(f)

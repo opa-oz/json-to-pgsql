@@ -52,6 +52,7 @@ def sql_table(table: Table) -> str:
     columns = ",\n".join(['\t' + column for column in columns])
 
     result = f"""
+--- order = {table.order}
 {CREATE_TABLE_IF_NOT_EXISTS(table.name)}
 (
 {columns}

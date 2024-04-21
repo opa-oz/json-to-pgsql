@@ -164,11 +164,18 @@ def generate(schema: dict[str, dict], alias: str) -> list[Table]:
                 raise Exception(f'Unexpected combinations of types. Entity: {key}, types: {types_joined}')
 
             column = Column(name=table_name.replace(f"{alias}_", ""))
+            table = Table(name=table_name, order=100, columns=[
+                Column(name="id", type="serial", autoincrement=True, nullable=False, unique=True, primary_key=True),
+                column
+            ])
+            qs_tables[table_name] = len(tables)
+            tables.append(table)
+
             # types should contain only 1 value, which starts with "ENTITY:"
             target_table_name = get_table_name(types_joined, alias)
             index = qs_tables[target_table_name]
             target_table = tables[index]
-            target_table.order += 1
+            target_table.order += 1 + table.order
             id_column = target_table.columns[0]
 
             if id_column.name != 'id':
@@ -176,13 +183,6 @@ def generate(schema: dict[str, dict], alias: str) -> list[Table]:
 
             column.type = id_column.type
             column.foreign_key = target_table_name
-
-            table = Table(name=table_name, order=100, columns=[
-                Column(name="id", type="serial", autoincrement=True, nullable=False, unique=True, primary_key=True),
-                column
-            ])
-            qs_tables[table_name] = len(tables)
-            tables.append(table)
 
             # replace table link to "<table>_m2m" table
             presumably_target_table = S + key.replace(".[]", "")

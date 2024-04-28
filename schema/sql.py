@@ -20,14 +20,20 @@ class Table:
     name: str
     columns: list[Column]
     order: int = 0
+    smth_to_many: bool = False
 
 
-def CREATE_TABLE_IF_NOT_EXISTS(table_name: str) -> str:
-    return f'CREATE TABLE IF NOT EXISTS "{table_name}"'
+def CREATE_TABLE_IF_NOT_EXISTS(table_name: str, schema: str = "public") -> str:
+    return f'CREATE TABLE IF NOT EXISTS "{schema}"."{table_name}"'
 
 
-def CREATE_INDEX_IF_NOT_EXISTS(column: Column, table_name: str) -> str:
-    return f'CREATE INDEX IF NOT EXISTS "{table_name}_idx" ON "{table_name}" USING btree ("{column.name}");'
+def CREATE_INDEX_IF_NOT_EXISTS(column: Column, table_name: str, schema: str = "public") -> str:
+    return f'CREATE INDEX IF NOT EXISTS "{table_name}_idx" ON "{schema}"."{table_name}" USING btree ("{column.name}");'
+
+
+def CONSTRAINT_UNIQUE(columns: list[Column], table_name: str) -> str:
+    colnames = ", ".join([f'"{c.name}"' for c in columns if c.name != 'id'])
+    return f'CONSTRAINT "{table_name}_unique" UNIQUE ({colnames})'
 
 
 def sql_table(table: Table) -> str:
@@ -44,8 +50,9 @@ def sql_table(table: Table) -> str:
                     # ' SERIAL' if column.autoincrement else '',
                     ' UNIQUE' if column.unique else '',
                     ' PRIMARY KEY' if column.primary_key else '',
+                    f' DEFAULT {column.default_value}' if not column.nullable and column.default_value != '' and not column.foreign_key else "",
                     f' REFERENCES {column.foreign_key} (id)' if column.foreign_key else "",
-                    '' if column.nullable else ' NOT NULL']
+                    '' if column.nullable or column.foreign_key else ' NOT NULL']
             )
         )
 
@@ -55,7 +62,8 @@ def sql_table(table: Table) -> str:
 --- order = {table.order}
 {CREATE_TABLE_IF_NOT_EXISTS(table.name)}
 (
-{columns}
+{columns}{',' if table.smth_to_many else ''}
+    {CONSTRAINT_UNIQUE(table.columns, table.name) if table.smth_to_many else ''}
 ) with (oids = false);
 {CREATE_INDEX_IF_NOT_EXISTS(table.columns[0], table.name)}
     """

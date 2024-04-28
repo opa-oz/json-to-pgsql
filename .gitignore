@@ -7,3 +7,4 @@ resources
 build
 dist
 output
+.DS_Store

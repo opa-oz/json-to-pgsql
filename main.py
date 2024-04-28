@@ -28,6 +28,20 @@ def bulk_parse():
     with open(output_dir / 'schema-sample2.json', 'w') as f:
         json.dump(schema, f, indent=2, cls=EnhancedJSONEncoder)
 
+    with open(resources_dir / 'manga.json', 'r') as f:
+        data = json.load(f)
+
+    schema = parse(data)
+    with open(output_dir / 'schema-sample3.json', 'w') as f:
+        json.dump(schema, f, indent=2, cls=EnhancedJSONEncoder)
+
+    with open(resources_dir / 'mal.json', 'r') as f:
+        data = json.load(f)
+
+    schema = parse(data)
+    with open(resources_dir / 'mal-schema.json', 'w') as f:
+        json.dump(schema, f, indent=2, cls=EnhancedJSONEncoder)
+
 
 def bulk_schema():
     base_dir = Path.cwd()
@@ -54,13 +68,40 @@ def bulk_schema():
 
     for table in pgsql:
         rs = sql_table(table)
-        print(rs)
         result.append(rs)
 
         with open(output_dir / 'anime.sql', 'w') as f:
             f.write("\n\n".join(result))
 
+    with open(resources_dir / 'schema-sample3.json', 'r') as f:
+        data = json.load(f)
+
+    pgsql = generate(data, "manga")
+
+    result = []
+
+    for table in pgsql:
+        rs = sql_table(table)
+        result.append(rs)
+
+        with open(output_dir / 'manga.sql', 'w') as f:
+            f.write("\n\n".join(result))
+
+    with open(resources_dir / 'mal-schema.json', 'r') as f:
+        data = json.load(f)
+
+    pgsql = generate(data, "mal_anime")
+
+    result = []
+
+    for table in pgsql:
+        rs = sql_table(table)
+        result.append(rs)
+
+        with open(output_dir / 'mal_anime.sql', 'w') as f:
+            f.write("\n\n".join(result))
+
 
 if __name__ == '__main__':
-    # bulk_parse()
+    bulk_parse()
     bulk_schema()

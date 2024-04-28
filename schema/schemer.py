@@ -1,7 +1,8 @@
-from dataclasses import dataclass
-
+import json
+from schema.encoder import EnhancedJSONEncoder
 from schema.entity import Entity
 from schema.sql import Column, Table
+from schema.utils import to_snake_case
 
 S = 'ENTITY:'
 NULL = 'null'
@@ -44,7 +45,12 @@ defaults = {
 def get_table_name(table_name: str, alias: str) -> str:
     parts = table_name.split(".")  # ex: "root.genres.[]"
     parts[0] = alias  # replace "root" with alias
-    parts = [p for p in parts if p != "[]"]  # remove ".[]"
+    parts = [to_snake_case(p) for p in parts if p != "[]"]  # remove ".[]"
+
+    is_root = table_name == 'root'
+
+    if not is_root:
+        parts = parts[1:]
 
     return "_".join(parts)
 
@@ -84,13 +90,13 @@ def get_columns(entity: Entity) -> list[Column]:
     id_seen = False
 
     for key, seen_types in entity.children.items():
-        column = Column(name=key)
+        column = Column(name=to_snake_case(key))
         # map types from Python to PostgreSQL (exclude - types started with "ENTITY:")
         types: list[str] = [mappings[t] if S not in t else t for t in seen_types]
 
         _, column = decide_type(types, column, entity.path)
 
-        if column.nullable:
+        if not column.nullable:
             if column.type in defaults.keys():
                 column.default_value = defaults[column.type]
             else:
@@ -113,9 +119,33 @@ def get_columns(entity: Entity) -> list[Column]:
     return columns
 
 
+def get_id_column(table) -> Column:
+    for c in table.columns:
+        if c.name == "id":
+            return c
+
+    raise Exception(f'Table {table} does not have an id column')
+
+
 def generate(schema: dict[str, dict], alias: str) -> list[Table]:
     tables: list[Table] = []
     qs_tables: dict[str, int] = dict()
+
+    def find_foreign_tables(table_key: str) -> list[Table]:
+        typestr = f'{S}{table_key}'
+        matchesstr = set()
+        matches = []
+
+        for t in tables:
+            for c in t.columns:
+                if c.type == typestr:
+                    if t.name in matchesstr:
+                        break
+                    matchesstr.add(t.name)
+                    matches.append(t)
+                    break
+
+        return list(matches)
 
     for key, _entity in schema.items():
         # First process one-to-one tables (a.k.a. nested dicts)
@@ -143,10 +173,20 @@ def generate(schema: dict[str, dict], alias: str) -> list[Table]:
             types: list[str] = [mappings[t] if S not in t else t for t in entity.types]
             _, column = decide_type(types, column, entity.path)
 
-            table = Table(name=table_name, order=100, columns=[
-                Column(name="id", type="serial", autoincrement=True, nullable=False, unique=True, primary_key=True),
+            foreign_tables = find_foreign_tables(key)
+            foreign_keys = []
+            for t in foreign_tables:
+                foreign_keys.append(Column(
+                    name=f"{t.name}_id",
+                    foreign_key=t.name,
+                    type=get_id_column(t).type
+                ))
+
+            table = Table(name=table_name, order=100, smth_to_many=True, columns=[
+                Column(name="id", type="serial", autoincrement=True, nullable=False, unique=False, primary_key=True),
                 column
             ])
+            table.columns += foreign_keys
             qs_tables[table_name] = len(tables)
             tables.append(table)
 
@@ -156,41 +196,57 @@ def generate(schema: dict[str, dict], alias: str) -> list[Table]:
         if entity.one_to_one:
             continue
 
-        table_name = get_table_name(key, alias) + "_m2m"
+        table_name = get_table_name(f"{key}.m2m", alias)
         types_joined = ",".join(entity.types)
 
         if S in types_joined:  # like "root.genres.[]", where it's must many-to-many
             if "," in types_joined:
                 raise Exception(f'Unexpected combinations of types. Entity: {key}, types: {types_joined}')
 
-            column = Column(name=table_name.replace(f"{alias}_", ""))
-            table = Table(name=table_name, order=100, columns=[
-                Column(name="id", type="serial", autoincrement=True, nullable=False, unique=True, primary_key=True),
+            external_key = key.replace(".[]", "")
+            foreign_tables = find_foreign_tables(external_key)
+            foreign_keys = []
+            for t in foreign_tables:
+                foreign_keys.append(Column(
+                    name=f"{t.name}_id",
+                    foreign_key=t.name,
+                    type=get_id_column(t).type
+                ))
+
+            column = Column(name=table_name)
+            table = Table(name=table_name, order=100, smth_to_many=True, columns=[
+                Column(name="id", type="serial", autoincrement=True, nullable=False, unique=False, primary_key=True),
                 column
             ])
+            table.columns += foreign_keys
             qs_tables[table_name] = len(tables)
             tables.append(table)
 
+            for ftable in foreign_tables:
+                ftable.order += 1 + table.order
+            #     for column in ftable.columns:
+            #         # print("===", column.name, column.type, " === ", external_key)
+            #         if S + external_key == column.type:
+            #             column.type = f"{S}{key}"
+            #             # print('HIT', ftable.name, column.type)
+
             # types should contain only 1 value, which starts with "ENTITY:"
             target_table_name = get_table_name(types_joined, alias)
-            index = qs_tables[target_table_name]
-            target_table = tables[index]
-            target_table.order += 1 + table.order
-            id_column = target_table.columns[0]
-
-            if id_column.name != 'id':
-                raise Exception(f'Column {id_column.name} is not id')
-
-            column.type = id_column.type
-            column.foreign_key = target_table_name
+            target_table = tables[qs_tables[target_table_name]]
+            target_table.smth_to_many = True
+            # target_table.order += 1 + table.order
+            # id_column = get_id_column(target_table)
+            #
+            # column.type = id_column.type
+            # column.foreign_key = target_table_name
 
             # replace table link to "<table>_m2m" table
-            presumably_target_table = S + key.replace(".[]", "")
-
-            for table in tables:
-                for column in table.columns:
-                    if S in column.type and presumably_target_table == column.type:
-                        column.type = f"{S}{key}.m2m"
+            # presumably_target_table = S + key.replace(".[]", "")
+            #
+            # for table in tables:
+            #     for column in table.columns:
+            #         if S in column.type and presumably_target_table == column.type:
+            #             column.type = f"{S}{key}.m2m"
 
     for table in tables:
         for column in table.columns:
@@ -198,11 +254,16 @@ def generate(schema: dict[str, dict], alias: str) -> list[Table]:
                 target_table_name = get_table_name(column.type, alias)
                 index = qs_tables[target_table_name]
                 target_table = tables[index]
-                target_table.order += 1 + table.order
-                id_column = target_table.columns[0]
 
-                if id_column.name != 'id':
-                    raise Exception(f'Column {id_column.name} is not id')
+                if target_table.smth_to_many:
+                    # @todo: delete column completely, for now - just fill it with char
+                    column.type = 'char(8)'
+                    column.nullable = True
+                    continue
+
+                target_table.order += 1 + table.order
+                id_column = get_id_column(target_table)
+
                 column.type = id_column.type
                 column.foreign_key = target_table_name
 

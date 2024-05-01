@@ -1,5 +1,3 @@
-import json
-from schema.encoder import EnhancedJSONEncoder
 from schema.entity import Entity
 from schema.sql import Column, Table
 from schema.utils import to_snake_case
@@ -157,7 +155,11 @@ def generate(schema: dict[str, dict], alias: str) -> list[Table]:
         columns = get_columns(entity)
 
         qs_tables[table_name] = len(tables)
-        tables.append(Table(name=table_name, columns=columns))
+        tables.append(Table(
+            name=table_name,
+            base_root=key,
+            columns=columns,
+        ))
 
     for key, _entity in schema.items():
         # Next process *-to-many (a.k.a. nested arrays)
@@ -182,10 +184,16 @@ def generate(schema: dict[str, dict], alias: str) -> list[Table]:
                     type=get_id_column(t).type
                 ))
 
-            table = Table(name=table_name, order=100, smth_to_many=True, columns=[
-                Column(name="id", type="serial", autoincrement=True, nullable=False, unique=False, primary_key=True),
-                column
-            ])
+            table = Table(
+                name=table_name,
+                order=100,
+                smth_to_many=True,
+                base_root=key,
+                columns=[
+                    Column(name="id", type="serial", autoincrement=True, nullable=False, unique=False,
+                           primary_key=True),
+                    column
+                ])
             table.columns += foreign_keys
             qs_tables[table_name] = len(tables)
             tables.append(table)
@@ -213,11 +221,21 @@ def generate(schema: dict[str, dict], alias: str) -> list[Table]:
                     type=get_id_column(t).type
                 ))
 
-            column = Column(name=table_name)
-            table = Table(name=table_name, order=100, smth_to_many=True, columns=[
-                Column(name="id", type="serial", autoincrement=True, nullable=False, unique=False, primary_key=True),
-                column
-            ])
+            plain_table = tables[qs_tables[get_table_name(external_key, alias)]]
+            plain_id = get_id_column(plain_table)
+
+            column = Column(name=table_name, foreign_key=plain_table.name, type=plain_id.type)
+            table = Table(
+                name=table_name,
+                base_root=key,
+                order=100,
+                smth_to_many=True,
+                columns=[
+                    Column(name="id", type="serial", autoincrement=True, nullable=False, unique=False,
+                           primary_key=True),
+                    column
+                ]
+            )
             table.columns += foreign_keys
             qs_tables[table_name] = len(tables)
             tables.append(table)

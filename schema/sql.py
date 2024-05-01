@@ -18,6 +18,7 @@ class Column:
 @dataclass
 class Table:
     name: str
+    base_root: str
     columns: list[Column]
     order: int = 0
     smth_to_many: bool = False
@@ -33,7 +34,8 @@ def CREATE_INDEX_IF_NOT_EXISTS(column: Column, table_name: str, schema: str = "p
 
 def CONSTRAINT_UNIQUE(columns: list[Column], table_name: str) -> str:
     colnames = ", ".join([f'"{c.name}"' for c in columns if c.name != 'id'])
-    return f'CONSTRAINT "{table_name}_unique" UNIQUE ({colnames})'
+    suffix = '-'.join([c.name for c in columns if c.name != 'id'])
+    return f'CONSTRAINT "{table_name}_unique-{suffix}" UNIQUE ({colnames})'
 
 
 def sql_table(table: Table) -> str:

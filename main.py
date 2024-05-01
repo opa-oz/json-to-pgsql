@@ -1,42 +1,37 @@
 import json
+import opyls
 from pathlib import Path
 
 from schema.encoder import EnhancedJSONEncoder
 from schema.parser import parse
 from schema.schemer import generate
 from schema.sql import sql_table
+from schema.tabler import get_tables_graph
 
 
 def bulk_parse():
-    base_dir = Path.cwd()
-    resources_dir = base_dir / 'resources'
-    output_dir = base_dir / 'output'
+    resources_dir = opyls.basedir('resources')
+    output_dir = opyls.basedir('output', True)
 
-    output_dir.mkdir(exist_ok=True)
-
-    with open(resources_dir / 'sample.json', 'r') as f:
-        data = json.load(f)
+    data = opyls.load_json(resources_dir / 'sample.json')
 
     schema = parse(data)
     with open(output_dir / 'schema-sample.json', 'w') as f:
         json.dump(schema, f, indent=2, cls=EnhancedJSONEncoder)
 
-    with open(resources_dir / 'anime.json', 'r') as f:
-        data = json.load(f)
+    data = opyls.load_json(resources_dir / 'anime.json')
 
     schema = parse(data)
     with open(output_dir / 'schema-sample2.json', 'w') as f:
         json.dump(schema, f, indent=2, cls=EnhancedJSONEncoder)
 
-    with open(resources_dir / 'manga.json', 'r') as f:
-        data = json.load(f)
+    data = opyls.load_json(resources_dir / 'manga.json')
 
     schema = parse(data)
     with open(output_dir / 'schema-sample3.json', 'w') as f:
         json.dump(schema, f, indent=2, cls=EnhancedJSONEncoder)
 
-    with open(resources_dir / 'mal.json', 'r') as f:
-        data = json.load(f)
+    data = opyls.load_json(resources_dir / 'mal.json')
 
     schema = parse(data)
     with open(resources_dir / 'mal-schema.json', 'w') as f:
@@ -50,8 +45,7 @@ def bulk_schema():
 
     output_dir.mkdir(exist_ok=True)
 
-    with open(resources_dir / 'schema-sample.json', 'r') as f:
-        data = json.load(f)
+    data = opyls.load_json(resources_dir / 'schema-sample.json')
 
     pgsql = generate(data, "poor_anime")
 
@@ -59,23 +53,27 @@ def bulk_schema():
         print(sql_table(table))
     print("======\n\n")
 
-    with open(resources_dir / 'schema-sample2.json', 'r') as f:
-        data = json.load(f)
+    data = opyls.load_json(resources_dir / 'schema-sample2.json')
 
     pgsql = generate(data, "anime")
 
     result = []
+    tables = []
 
     for table in pgsql:
         rs = sql_table(table)
+        tables.append(table)
         result.append(rs)
 
         with open(output_dir / 'anime.sql', 'w') as f:
             f.write("\n\n".join(result))
 
-    with open(resources_dir / 'schema-sample3.json', 'r') as f:
-        data = json.load(f)
+    with open(output_dir / 'tables.json', 'w') as f:
+        json.dump(tables, f, indent=2, cls=EnhancedJSONEncoder)
 
+    get_tables_graph(tables)
+
+    data = opyls.load_json(resources_dir / 'schema-sample3.json')
     pgsql = generate(data, "manga")
 
     result = []
@@ -87,8 +85,7 @@ def bulk_schema():
         with open(output_dir / 'manga.sql', 'w') as f:
             f.write("\n\n".join(result))
 
-    with open(resources_dir / 'mal-schema.json', 'r') as f:
-        data = json.load(f)
+    data = opyls.load_json(resources_dir / 'mal-schema.json')
 
     pgsql = generate(data, "mal_anime")
 
